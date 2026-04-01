@@ -1,44 +1,28 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import pickle
-import os
-import numpy as np
-
-app = Flask(__name__)
-CORS(app)
-
-# Use absolute path for reliability
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Load trained models
-model_eff = pickle.load(open(os.path.join(BASE_DIR, "model_efficiency.pkl"), "rb"))
-model_bd = pickle.load(open(os.path.join(BASE_DIR, "model_blowdown.pkl"), "rb"))
-model_mu = pickle.load(open(os.path.join(BASE_DIR, "model_makeup.pkl"), "rb"))
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Cooling Tower ML API is Running"
-
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
         data = request.get_json()
-        # Ensure input keys match the names expected by the model
-        X = np.array([[
-            float(data["hot"]), 
-            float(data["cold"]), 
-            float(data["wbt"]), 
-            float(data["flow"]), 
-            float(data["coc"])
-        ]])
+        
+        # Extract values for both ML and manual calculations
+        hot = float(data["hot"])
+        cold = float(data["cold"])
+        wbt = float(data["wbt"])
+        flow = float(data["flow"])
+        coc = float(data["coc"])
+        
+        # Prepare input for ML models
+        X = np.array([[hot, cold, wbt, flow, coc]])
 
+        # Calculate Evaporation Loss manually based on the report's formula
+        # E = 0.00085 * 1.8 * C * (T1 - T2)
+        evaporation_loss = 0.00085 * 1.8 * flow * (hot - cold)
+
+        # Return updated JSON
         return jsonify({
             "efficiency": round(float(model_eff.predict(X)[0]), 2),
             "blowdown": round(float(model_bd.predict(X)[0]), 2),
-            "makeup": round(float(model_mu.predict(X)[0]), 2)
+            "water_makeup": round(float(model_mu.predict(X)[0]), 2), # Renamed
+            "evaporation_loss": round(evaporation_loss, 2) # Added
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
-
-if __name__ == "__main__":
-    app.run(debug=True)
